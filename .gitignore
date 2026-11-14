@@ -1,20 +1,22 @@
 # Python
 .venv/
 __pycache__/
-*.pyc
+*.py[cod]
 .pytest_cache/
 
-# Secrets
+# Environment variables and secrets
 .env
+.env.*
+!.env.example
 
-# Personal/sample PDFs
+# Personal documents
 sample_documents/*.pdf
 
-# Uploaded files
+# Uploaded documents
 backend/uploads/*
 !backend/uploads/.gitkeep
 
-# Vector database
+# Vector databases
 backend/vector_db/*
 !backend/vector_db/.gitkeep
 
@@ -25,17 +27,7 @@ frontend/dist/
 # IDE
 .vscode/
 .idea/
+
 # Windows
 desktop.ini
 Thumbs.db
-
-# Personal documents
-sample_documents/*.pdf
-
-# Python
-.venv/
-__pycache__/
-*.pyc
-
-# Secrets
-.env
