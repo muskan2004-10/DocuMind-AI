@@ -16,7 +16,13 @@ from rag.vector_store import create_vector_store, save_vector_store
 from rag.vector_store import load_vector_store
 from rag.retriever import retrieve_documents
 from rag.generator import generate_answer, rewrite_question
-
+from chat_history import (
+    init_db,
+    create_conversation,
+    save_message,
+    get_chat_history,
+    conversation_exists
+)
 # --------------------------------------------------
 # 1. Configuration
 # --------------------------------------------------
@@ -45,6 +51,8 @@ app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024
 
 logging.basicConfig(level=logging.INFO)
 
+# Initialise SQLite chat-history tables.
+init_db()
 # Load the embedding model only once.
 embedding_model = None
 
@@ -163,6 +171,8 @@ def upload_documents():
             vector_store=vector_store,
             storage_path=vector_path
         )
+        # Create a database conversation for this document session.
+        create_conversation(session_id)
 
         return jsonify({
             "status": "success",
@@ -182,7 +192,51 @@ def upload_documents():
 
 
 # --------------------------------------------------
-# 5. Ask questions about uploaded documents
+# 5. Retrieve previous chat history
+# --------------------------------------------------
+
+@app.route("/api/chat/history/<session_id>", methods=["GET"])
+def restore_chat_history(session_id):
+
+    if not is_valid_session_id(session_id):
+        return jsonify({
+            "error": "Invalid session ID."
+        }), 400
+
+    if not conversation_exists(session_id):
+        return jsonify({
+            "error": "Conversation not found."
+        }), 404
+
+    vector_path = get_session_vector_path(session_id)
+
+    if not (vector_path / "index.faiss").exists():
+        return jsonify({
+            "error": "Documents for this conversation are unavailable."
+        }), 404
+
+    history = get_chat_history(session_id)
+
+    # Restore original document filenames.
+    session_folder = UPLOAD_FOLDER / session_id
+
+    documents = []
+
+    if session_folder.exists():
+        for file_path in session_folder.iterdir():
+            if file_path.is_file():
+                original_name = file_path.name.split("_", 1)[-1]
+                documents.append(original_name)
+
+    return jsonify({
+        "status": "success",
+        "session_id": session_id,
+        "messages": history,
+        "documents": documents
+    }), 200
+
+# --------------------------------------------------
+# 6. Ask questions about uploaded documents
 # --------------------------------------------------
 
 @app.route("/api/chat", methods=["POST"])
@@ -191,19 +245,12 @@ def chat():
     data = request.get_json(silent=True) or {}
 
     session_id = data.get("session_id")
-    question = data.get("question", "").strip()
-    chat_history = data.get("chat_history", [])
+    question = data.get("question", "")
 
-    if not isinstance(chat_history, list):
-        return jsonify({"error": "Invalid chat history."}), 400
+    if not isinstance(question, str):
+        return jsonify({"error": "Question must be text."}), 400
 
-    # Keep only the most recent 6 messages.
-    chat_history = [
-        message for message in chat_history[-6:]
-        if isinstance(message, dict)
-        and message.get("role") in ("user", "assistant")
-        and isinstance(message.get("content"), str)
-]
+    question = question.strip()
 
     if not session_id or not is_valid_session_id(session_id):
         return jsonify({
@@ -215,14 +262,30 @@ def chat():
             "error": "Please enter a question."
         }), 400
 
+    if not conversation_exists(session_id):
+        return jsonify({
+            "error": "Conversation not found. Upload PDFs first."
+        }), 404
+
     vector_path = get_session_vector_path(session_id)
 
     if not (vector_path / "index.faiss").exists():
         return jsonify({
-            "error": "No documents found for this session. Upload PDFs first."
+            "error": "No documents found for this session."
         }), 404
 
     try:
+        # Retrieve trusted conversation history from SQLite.
+        chat_history = get_chat_history(session_id)
+
+        # Save the new user question.
+        save_message(
+            session_id=session_id,
+            role="user",
+            content=question,
+            message_type="user_provided"
+        )
+
         # Load the session's vector database.
         model = get_model()
 
@@ -231,26 +294,34 @@ def chat():
             storage_path=vector_path
         )
 
-        # Understand follow-up questions using previous messages.
+        # Rewrite follow-up questions using stored history.
         standalone_question = rewrite_question(
             question=question,
             chat_history=chat_history
         )
 
-        # Retrieve document chunks using the rewritten question.
+        # Retrieve relevant document chunks.
         documents = retrieve_documents(
             vector_store=vector_store,
             query=standalone_question,
             k=4
         )
 
-        # Generate an answer using retrieved chunks and conversation history.
+        # Generate the answer using retrieved documents
+        # and the previous conversation.
         answer = generate_answer(
             question=standalone_question,
             retrieved_documents=documents,
             chat_history=chat_history
         )
-        
+
+        # Save the assistant's answer.
+        save_message(
+            session_id=session_id,
+            role="assistant",
+            content=answer,
+            message_type="unverified"
+        )
 
         # Prepare source references.
         sources = []
@@ -275,16 +346,15 @@ def chat():
             "sources": sources
         }), 200
 
-    except Exception as error:
+    except Exception:
         logging.exception("Chat request failed")
 
         return jsonify({
-            "error": str(error)
+            "error": "Could not generate an answer. Please try again."
         }), 500
 
-
 # --------------------------------------------------
-# 6. Start Flask server
+# 7. Start Flask server
 # --------------------------------------------------
 
 if __name__ == "__main__":

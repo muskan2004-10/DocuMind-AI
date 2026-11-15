@@ -31,3 +31,7 @@ frontend/dist/
 # Windows
 desktop.ini
 Thumbs.db
+
+backend/chat_history.db
+backend/chat_history.db-shm
+backend/chat_history.db-wal

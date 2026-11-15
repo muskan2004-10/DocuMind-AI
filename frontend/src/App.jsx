@@ -1,5 +1,5 @@
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import "./App.css";
 
 const API_URL = "http://127.0.0.1:5000/api";
@@ -15,6 +15,43 @@ function App() {
   const [uploading, setUploading] = useState(false);
   const [asking, setAsking] = useState(false);
   const [error, setError] = useState("");
+  const [restoring, setRestoring] = useState(true);
+
+  useEffect(() => {
+    async function restoreSession() {
+      const savedSessionId = localStorage.getItem("documind_session_id");
+
+      if (!savedSessionId) {
+        setRestoring(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(
+          `${API_URL}/chat/history/${savedSessionId}`
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          localStorage.removeItem("documind_session_id");
+          setRestoring(false);
+          return;
+        }
+
+        setSessionId(savedSessionId);
+        setMessages(data.messages || []);
+        setDocuments(data.documents || []);
+
+      } catch (err) {
+        setError("Could not restore your previous conversation.");
+      } finally {
+        setRestoring(false);
+      }
+    }
+
+    restoreSession();
+  }, []);
 
   function handleFileChange(event) {
     const files = Array.from(event.target.files || []);
@@ -56,6 +93,12 @@ function App() {
       }
 
       setSessionId(data.session_id);
+
+      localStorage.setItem(
+        "documind_session_id",
+        data.session_id
+      );
+
       setDocuments(selectedFiles.map((file) => file.name));
       setMessages([
         {
@@ -96,13 +139,9 @@ function App() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-        session_id: sessionId,
-        question: currentQuestion,
-        chat_history: messages.slice(-6).map((message) => ({
-          role: message.role,
-          content: message.content,
-        })),
-      }),
+          session_id: sessionId,
+          question: currentQuestion,
+        }),
       });
 
       const data = await response.json();
@@ -126,6 +165,15 @@ function App() {
     }
   }
 
+  if (restoring) {
+    return (
+      <div className="app-shell">
+        <div className="empty-chat">
+          Restoring your previous conversation...
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="app-shell">
       <header className="topbar">
