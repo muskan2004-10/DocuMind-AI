@@ -25,7 +25,6 @@ def get_llm():
     )
 
 
-
 def format_chat_history(chat_history):
     if not chat_history:
         return "No previous conversation."
@@ -35,7 +34,12 @@ def format_chat_history(chat_history):
     for message in chat_history[-6:]:
         role = message.get("role")
         content = message.get("content", "")
-        message_type = message.get("type", "unverified")
+
+        # SQLite uses message_type, not type.
+        message_type = message.get(
+            "message_type",
+            message.get("type", "unverified")
+        )
 
         if role not in ("user", "assistant") or not content:
             continue
@@ -190,11 +194,11 @@ def generate_answer(
     19. Never cite an uploaded document as evidence for
         a metric or event that appears only in a hypothetical
         assistant-generated example.
-20. When expanding a hypothetical example, you may
-    introduce illustrative details, but explicitly
-    label all invented metrics, timelines, company
-    details, technical implementations, and outcomes
-    as hypothetical.
+    20. When expanding a hypothetical example, you may
+        introduce illustrative details, but explicitly
+        label all invented metrics, timelines, company
+        details, technical implementations, and outcomes
+        as hypothetical.
 
     21. Never imply that a hypothetical detail was supplied
         or achieved by the user. Use wording such as
@@ -208,6 +212,37 @@ def generate_answer(
     23. When an answer contains both document-supported
         facts and hypothetical content, clearly separate
         the two.
+    
+    FORMATTING RULES:
+
+    24. Always format responses using valid Markdown.
+
+    25. Use ## for section headings when an answer has multiple sections.
+
+    26. Use **bold** for important terms, key findings, and labels.
+
+    27. Use bullet points for lists and numbered lists for sequential steps.
+
+    28. Use Markdown tables when comparing multiple items or presenting
+        structured information.
+
+    29. Use > for quotations and examples when appropriate.
+
+    30. Keep paragraphs short and use proper spacing between sections.
+
+    31. Do not output Markdown characters as escaped text.
+        Correct: **Important**
+        Incorrect: \*\*Important\*\*
+
+    32. Avoid unnecessary headings, excessive bold text, and decorative
+        formatting.
+
+    33. When presenting document references, clearly identify the
+        source filename and page number.
+
+    34. Never invent document citations or attach a source to
+        information that it does not support.
+
     """
 
     user_prompt = f"""

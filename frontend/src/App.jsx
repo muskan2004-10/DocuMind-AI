@@ -1,6 +1,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import "./App.css";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 
 const API_URL = "http://127.0.0.1:5000/api";
 
@@ -326,7 +328,15 @@ function App() {
                       <span className="message-role">
                         {message.role === "assistant" ? "DOCUMIND AI" : "YOU"}
                       </span>
-                      <p>{message.content}</p>
+                      {message.role === "assistant" ? (
+                        <div className="message-content">
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                            {message.content}
+                          </ReactMarkdown>
+                        </div>
+                      ) : (
+                        <p className="message-content">{message.content}</p>
+                      )}
 
                       {message.sources?.length > 0 && (
                         <div className="sources">
